@@ -1,7 +1,19 @@
 import sys
 
-def backwardChain(queryList, clauseList):
-	pass
+def backwardChain(queryList, facts, antecedents, consequents):
+	for query in queryList:
+		""" Query is also a clause in the clauses """
+		if query in facts:
+			print True
+		else:
+			""" Actual algorithm starts here """
+			# print query.split('(')[0]
+			# print [x.split('(')[0] for x in consequents]
+			if query.split('(')[0] not in [x.split('(')[0] for x in consequents]:
+				print False
+			else:
+				print "Need to do this"
+
 
 def processInput():
 	with open(sys.argv[-1], 'r') as inputFile:
@@ -27,10 +39,23 @@ def processInput():
 			count += 1
 			clauseList.append(inputList[count])
 
+		facts, antecedents, consequents = list(), list(), list()
+		"""Get all antecedents and consequents"""
+		for clause in clauseList:
+			if "=>" in clause:
+				dissectedClause = clause.split(" => ")
+				antecedents.append(dissectedClause[0])
+				consequents.append(dissectedClause[1])
+			else:
+				facts.append(clause)
+
+		print facts
+		print antecedents
+		print consequents
 		# print numClauses
 		# print clauseList
 
-		backwardChain(queryList, clauseList)
+		backwardChain(queryList, facts, antecedents, consequents)
 
 def main():
 	processInput()
