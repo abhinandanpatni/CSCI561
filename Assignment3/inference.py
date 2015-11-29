@@ -29,8 +29,8 @@ def getValidValues(constantDict, variableDict, posMap):
 					# print "Constant being printed here", constantDict[innerKey]
 				except:
 					# print "Entering except"
-					# print "Constant being printed here", constantDict[innerKey]
-					validValues[key] = constantDict[innerKey]
+					validValues[key] = list()
+					validValues[key].extend(constantDict[innerKey]) if type(constantDict[innerKey]) is list else validValues[key].append(constantDict[innerKey])
 			elif key not in validValues:
 				validValues[key] = []
 	return validValues
@@ -42,7 +42,6 @@ def getValidConstants(query_predicate):
 		for singleFact in facts:
 			if query_predicate == getPredicate(singleFact):
 				factConstants = getConstants(singleFact)
-				print factConstants
 				const_index = 0
 				for eachConstant in factConstants:
 					if const_index in validConstants:
@@ -54,11 +53,57 @@ def getValidConstants(query_predicate):
 
 					const_index += 1
 
+		print "Valid constants are ", validConstants
 		return validConstants
 
 	else:
 		"""Nothing was found in the facts with the same query predicate. Return empty dict or something weird"""
+		print "Nothing going back"
 		return {}
+
+def getIntersection(returnedConstDict, validValues):
+	print "From Intersection"
+	inter_const = dict()
+
+	if not returnedConstDict:
+		return {}
+
+	else:
+		for key in validValues:
+			if len(validValues[key]) == 0:
+				inter_const[key] = returnedConstDict[key]
+			else:
+				inter_const[key] = list( set.intersection ( set(validValues[key]), set(returnedConstDict[key]) ) )
+
+		return inter_const
+
+def joiner(inter_const, finalDictionary, rule_constant):
+	print "From joiner"
+	print finalDictionary
+	print inter_const, finalDictionary, rule_constant
+	if not inter_const:
+		return finalDictionary
+
+	if not finalDictionary:
+		for key in rule_constant:
+				try:
+					finalDictionary[rule_constant[key]].extend(inter_const[key])
+				except:
+					finalDictionary[rule_constant[key]] = inter_const[key]
+
+	else:
+		for key in rule_constant:
+				if rule_constant[key] not in finalDictionary:
+					try:
+						finalDictionary[rule_constant[key]].extend(inter_const[key])
+					except:
+						finalDictionary[rule_constant[key]] = inter_const[key]
+				else:
+					print "FD:", finalDictionary[rule_constant[key]]
+					print "CD:", inter_const[key]
+					finalDictionary[rule_constant[key]] = list( set.intersection ( set(finalDictionary[rule_constant[key]]), set(inter_const[key]) ) )
+
+	return finalDictionary
 
 def createPosMap(query_predicate, rule):
 	global clauses
@@ -74,7 +119,14 @@ def createPosMap(query_predicate, rule):
 		posMap[index] = [i for i, x in enumerate(rule_constant_list) if x == query_constant_list[index]]
 		unmappedList = filter(lambda a: a != query_constant_list[index], unmappedList)
 
-	return posMap, unmappedList
+	unmappedDict = dict()
+	for index in range(len(rule_constant_list)):
+		if rule_constant_list[index] in unmappedList:
+			unmappedDict[index] = [i for i in unmappedList if i == rule_constant_list[index]]
+
+	# print "===========unmappedDict: ", unmappedDict
+	# print "===========unmappedList: ", unmappedList
+	return posMap, unmappedDict
 
 def getRules(query_predicate):
 	global clauses
@@ -90,6 +142,7 @@ def backwardChain(query_predicate, query_constant, unmappedList, explored):
 	values are all possible values of the constant. List."""
 	index = 0
 	constantDict = dict()
+	finalDictionary = dict()
 	for each in query_constant:
 			constantDict[index] = query_constant[each]
 			index += 1
@@ -130,28 +183,43 @@ def backwardChain(query_predicate, query_constant, unmappedList, explored):
 					# print posMap, unmappedValues
 					single_predicate = getPredicate(single)
 					single_constant = getConstantMap(single)
-					# print "Getting valid values for ", constantDict, single_constant, posMap
+					print "For ", single_predicate, single_constant
+					print "Getting valid values for ", constantDict, single_constant, posMap
 					validValues = getValidValues(constantDict, single_constant, posMap)
-					# print "Valid Values", validValues
-					# print "Now calling backward for ", single_predicate, single_constant
+					print "Valid Values", validValues
 					"""This should return a dictionary. 
 					Do an intersection of that dict with constantDict. Return the intersection"""
 					returnedConstDict = backwardChain(single_predicate, validValues, unmappedValues, explored)
+					print "Returned Const Dict: ", returnedConstDict
+					inter_const = getIntersection(returnedConstDict, validValues)
+					print "For ", single_predicate, single_constant
+					print "INTER_CONST: ", inter_const
+					finalDictionary = joiner(inter_const, finalDictionary, single_constant)
+					print "For ", single_predicate, single_constant
+					print "FINAL DICTIONARY IS: ", finalDictionary
+					
 			else:
 				"""Create a position map for the rule. Call backward chaining on it to return the set of possible values for constants"""
 				posMap, unmappedValues = createPosMap(query_predicate, eachRule)
 				# print posMap, unmappedValues
 				rule_predicate = getPredicate(eachRule)
 				rule_constant = getConstantMap(eachRule)
-				# print "Getting valid values for ", constantDict, rule_constant, posMap
+				print "For ", rule_predicate, rule_constant
+				print "Getting valid values for ", constantDict, rule_constant, posMap
 				validValues = getValidValues(constantDict, rule_constant, posMap)
-				# print "Valid Values", validValues
+				print "Valid Values", validValues
 				# print "Now calling backward for ", rule_predicate, rule_constant
 				# print validValues
 				returnedConstDict = backwardChain(rule_predicate, validValues, unmappedValues, explored)
+				inter_const = getIntersection(returnedConstDict, validValues)
+				print "For ", rule_predicate, rule_constant
+				print "INTER_CONST: ", inter_const
+				finalDictionary = joiner(inter_const, finalDictionary, rule_constant)
+				print "For ", rule_predicate, rule_constant
+				print "FINAL DICTIONARY IS: ", finalDictionary
+				
 
-
-	return
+	
 
 
 def processInput():
@@ -195,9 +263,9 @@ def processInput():
 			else:
 				facts.append(each)
 
-		print queryList
-		print clauses
-		print facts
+		# print queryList
+		# print clauses
+		# print facts
 
 		for query in queryList:
 			explored, unmappedList = list(), list()
