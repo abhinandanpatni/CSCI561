@@ -1,9 +1,10 @@
+from copy import deepcopy
 import sys
-from copy import deepcopy 
 
+standardizedVars = 0
 queries = list()
 knowledge_base = list()
-standardizedVars = 0
+explored = list()
 
 """Queries and clauses have a general struct:
 antecedent1 ^ antecedent2 ^... => consequent """
@@ -17,7 +18,7 @@ class Clause:
 
 """Every term in antecedent has a structure:
 predicate(arguments)"""
-class Complex:
+class Term:
 	def __init__ (self, predicate, arguments):
 		self.predicate = predicate	
 		self.arguments = arguments
@@ -26,26 +27,109 @@ class Complex:
 		print "Arguments: ", [i.value for i in self.arguments]
 
 """Every constant has a value. Starts with uppercase letter"""
-class Constant:
+class FactVariable:
 	def __init__ (self, value):
 		self.value = value
-	def printConstant(self):
-		print "Constant Value: ", self.value
+	def printFactVariable(self):
+		print "FactVariable Value: ", self.value
 
 """Every variable has a value. Is a single lowercase letter"""
-class Variable:
+class UnknownVariable:
 	def __init__ (self, value):
 		self.value = value
-	def printVariable(self):
-		print "Variable value", self.value
+	def printUnknownVariable(self):
+		print "UnknownVariable value", self.value
 
 """Get predicate for a clause"""
 def getPredicate(clause):
 	return clause.split('(')[0]
 
 """Get list of arguments for a clause"""
-def getConstants(clause):
+def getFactVariables(clause):
 	return clause.split('(')[1].split(')')[0].split(',')
+
+"""Get map of constants and how they map position wise"""
+def getFactVariableMap(query):
+	constants = query.split('(')[1].split(')')[0].split(',')
+	constantDict = dict()
+	index = 0
+	for constant in constants:
+		constantDict[index] = constant
+		index += 1
+	return constantDict
+
+"""Check and return the correct value of the sentence/or variable of the sentence"""
+def sentenceChecker(sentence):
+	if isinstance(sentence, FactVariable):
+		return sentence.value
+	elif isinstance(sentence, (str,unicode)):
+		return sentence
+	else:
+		return None
+
+"""Checks in sentence is in theta or not"""
+def sentenceInTheta(sentence, theta):
+	if isinstance(sentence, FactVariable) and sentence.value in theta:
+		return True
+	elif isinstance(sentence, (str,unicode)) and sentence in theta:
+		return True
+	else:
+		return False
+
+"""Checks if the variable has been standardized or not"""
+def checkStandardizedVar(theta, var):
+	# return theta[var.value][:3] == "var"
+	return theta[var.value].isdigit()
+
+"""UNIFY_VAR according to textbook"""
+def UNIFY_VAR(variable, sentence, theta):
+	if variable.value in theta:
+		return UNIFY(theta[variable.value], sentence, theta)
+	elif sentenceInTheta(sentence, theta):
+	# elif makeCheck(variable, sentence, theta):
+		return UNIFY(variable, theta[sentenceChecker(sentence)], theta)
+	temp_theta = theta.copy()
+	if not isinstance(variable, (str, unicode)):
+		temp_theta[variable.value] = sentence.value
+	else:
+		temp_theta[variable.value] = sentence
+
+	return temp_theta
+
+"""UNIFY according to textbook"""
+def UNIFY(sentence1, sentence2, theta = {}):
+	if theta is None:
+		return None
+	elif (sentenceChecker(sentence1) == sentenceChecker(sentence2)) and (sentenceChecker(sentence1) is not None):
+		return theta
+	elif isinstance(sentence1, UnknownVariable):
+		return UNIFY_VAR(sentence1, sentence2, theta)
+	elif isinstance(sentence2, UnknownVariable):
+		return UNIFY_VAR(sentence2, sentence1, theta)
+	elif isinstance(sentence1, Term) and isinstance(sentence2, Term):
+		return UNIFY(sentence1.arguments, sentence2.arguments, UNIFY(sentence1.predicate, sentence2.predicate, theta))
+	elif type(sentence1) is list and type(sentence2) is list and len(sentence1) == len(sentence2):
+		if len(sentence1) == 0:
+			return theta
+		return UNIFY(sentence1[1:], sentence2[1:], UNIFY(sentence1[0], sentence2[0], theta))
+	else:
+		return None
+
+"""SUBS according to textbook"""
+def makeSubstitution(theta, sentence):
+	if theta is None:
+		return deepcopy(sentence)
+		# return deepcopy(sentence)
+	else:
+		temp_sentence = deepcopy(sentence)
+		for index in range(len(sentence.arguments)):
+			sentence_var = sentence.arguments[index]
+			if isinstance(sentence_var, UnknownVariable) and sentence_var.value in theta:
+				if not checkStandardizedVar(theta, sentence_var):
+					temp_sentence.arguments[index] = FactVariable(theta[sentence_var.value])
+				else:
+					temp_sentence.arguments[index].value = theta[sentence_var.value]
+		return temp_sentence
 
 """Process a clause in the knowledge base and append it to the knowledge base"""
 def processKBClause(clause):
@@ -59,173 +143,164 @@ def processKBClause(clause):
 		for each in antecedents:
 			each_arg_list = list()
 			each_predicate = getPredicate(each)
-			for const in getConstants(each):
+			for const in getFactVariables(each):
 				if const[0].islower():
-					each_arg_list.append(Variable(const))
+					each_arg_list.append(UnknownVariable(const))
 				else:
-					each_arg_list.append(Constant(const))
+					each_arg_list.append(FactVariable(const))
 
-			allAntecedents.append(Complex(each_predicate, each_arg_list))
+			allAntecedents.append(Term(each_predicate, each_arg_list))
 
 
 		consequent_predicate = getPredicate(consequents)
 		consequent_arg_list = list()
-		for const in getConstants(consequents):
+		for const in getFactVariables(consequents):
 				if const[0].islower():
-					consequent_arg_list.append(Variable(const))
+					consequent_arg_list.append(UnknownVariable(const))
 				else:
-					consequent_arg_list.append(Constant(const))
+					consequent_arg_list.append(FactVariable(const))
 
-		finalConsequent = Complex(consequent_predicate, consequent_arg_list)
+		finalConsequent = Term(consequent_predicate, consequent_arg_list)
 		knowledge_base.append(Clause(allAntecedents, finalConsequent))
 
 	else:
 		fact_predicate = getPredicate(clause)
 		const_list = list()
-		for eachConstant in getConstants(clause):
-			# print eachConstant
-			const_list.append(Constant(eachConstant))
-		fact = Complex(fact_predicate, const_list)
-		knowledge_base.append(Clause("FACT", fact))
-
-def checkStandardizedVar(theta, var):
-	return theta[var.value][:3] == "var"
-
-def makeSubstitution(theta, sentence):
-	if not theta:
-		return deepcopy(sentence)
-	else:
-		temp_sentence = deepcopy(sentence)
-		for index in range(len(sentence.arguments)):
-			sentence_var = sentence.arguments[index]
-			if isinstance(sentence_var, Variable) and sentence_var.value in theta:
-				if not checkStandardizedVar(theta, sentence_var):
-					temp_sentence.arguments[index] = Constant(theta[sentence_var.value])
-				else:
-					temp_sentence.arguments[index].value = theta[sentence_var.value]
-		return temp_sentence
+		for eachFactVariable in getFactVariables(clause):
+			# print eachFactVariable
+			const_list.append(FactVariable(eachFactVariable))
+		fact = Term(fact_predicate, const_list)
+		knowledge_base.append(Clause("", fact))
 
 
-def makeCheck(variable, sentence, theta):
-	if (isinstance(variable, Constant) and variable.value in theta) or (if isinstance(variable, (str, unicode)) and variable in theta):
-		return True
-
-def UNIFY_VAR(variable, sentence, theta):
-	if variable.value in theta:
-		return UNIFY(theta[variable.var], sentence, theta)
-	elif makeCheck(variable, sentence, theta):
-		return UNIFY(variable, theta[variable.value], theta)
-	temp_theta = theta.copy()
-	if not isinstance(variable, (str, unicode)):
-		temp_theta[variable.value] = sentence.value
-	else:
-		temp_theta[variable.value] = sentence
-
-	return temp_theta
-
-
-"""Following the algorithm from the textbook"""
-def UNIFY(sentence1, sentence2, theta = {}):
-	if theta is None:
-		return None:
-	elif sentence1 == sentence2 or ((isinstance(sentence1,Constant) and isinstance(sentence2,Constant)) and sentence1.value == sentence2.value) :
-		return theta
-	elif isinstance(sentence1, Variable):
-		return UNIFY_VAR(sentence1, sentence2, theta)
-	elif isinstance(sentence2, Variable):
-		return UNIFY_VAR(sentence2, sentence1, theta)
-	elif isinstance(sentence1, Complex) and isinstance(sentence2, Complex):
-		return UNIFY(sentence1.arguments, sentence2.arguments, UNIFY(sentence1.predicate, sentence2.predicate, theta))
-	elif type(sentence1) == list and type(sentence2) == list and len(sentence1) == len(sentence2):
-		return theta if len(sentence1) == 0 else UNIFY(sentence[1:], sentence2[1:], UNIFY(sentence1[1], sentence2[0], theta))
-	else:
-		return None
-
-"""Localized standardization of every variable in clause"""
+"""Basically adds the standardizedVars number to the dict of standardizedVars"""
 def Standardization(clause):
 	global standardizedVars
 	mapper_variable = dict()
 
 	arguments_consequent = clause.consequent.arguments
 	for eachArg in arguments_consequent:
-		if isinstance(eachArg, Variable):
+		if isinstance(eachArg, UnknownVariable):
 			if eachArg.value not in mapper_variable:
-				mapper_variable[eachArg.value] = "var" + str(standardizedVars)
+				# mapper_variable[eachArg.value] = 'var' + str(standardizedVars)
+				mapper_variable[eachArg.value] = str(standardizedVars)
 				eachArg.value = mapper_variable[eachArg.value]
 				standardizedVars += 1
 			else:
 				eachArg.value = mapper_variable[eachArg.value]
 
-	if clause.antecedent != "FACT":
-		for eachClause in clause.antecedent:
-			for argument in eachClause.arguments:
-				if isinstance(argument, Variable):
-					if argument.value not in mapper_variable:
-						mapper_variable[argument.value] = "var" + str(standardizedVars)
-						argument.value = mapper_variable[argument.value]
+	if clause.antecedent != "":
+		for eachTerm in clause.antecedent:
+			for eachArg in eachTerm.arguments:
+				if isinstance(eachArg, UnknownVariable):
+					if eachArg.value not in mapper_variable:
+						# mapper_variable[eachArg.value] = 'var' + str(standardizedVars)
+						mapper_variable[eachArg.value] = str(standardizedVars)
+						eachArg.value = mapper_variable[eachArg.value]
 						standardizedVars += 1
 					else:
-						argument.value = mapper_variable[argument.value]
-
+						eachArg.value = mapper_variable[eachArg.value]
 	return clause
 
-
-"""According to textbook algorithm"""
-def FOL_BC_OR(finalGoal, theta, explored = {}):
-	pass
-
-"""According to textbook algorithm"""
+"""FOL_BC_AND according to textbook"""
 def FOL_BC_AND(allGoals, theta, explored):
 	if theta is None:
-		return
-	if len(allGoals) == 0:
+		pass
+	elif len(allGoals) == 0 or allGoals == True:
 		yield theta
 	else:
 		firstGoal = allGoals[0]
 		remainingGoals = allGoals[1:] if len(allGoals) > 1 else list()
+		for theta_dash in FOL_BC_OR(makeSubstitution(theta, firstGoal), theta, explored):
+			for theta_dash_2 in FOL_BC_AND(remainingGoals, theta_dash, explored):
+				yield theta_dash_2
 
-		for someTheta in 
 
-"""According to textbook algorithm"""
+"""FOL_BC_OR according to textbook. Checks for visited nodes. Adds when necessary"""
+def FOL_BC_OR(finalGoal, theta, explored={}):
+	for index in range(len(knowledge_base)):
+		tempExplored = explored
+		clause = Standardization(knowledge_base[index])
+		temp_theta = UNIFY(clause.consequent, finalGoal, theta)
+		if temp_theta is not None:
+			subbedConsequent = makeSubstitution(temp_theta, clause.consequent)
+			if not isExplored(index, subbedConsequent, explored):
+				updatedExplored = deepcopy(explored)
+				for argument in subbedConsequent.arguments:
+					if not isinstance(argument, FactVariable):
+						tempExplored = updatedExplored
+						break
+					try:
+						updatedExplored[index].append(subbedConsequent)
+					except:
+						updatedExplored[index] = [subbedConsequent]
+
+				tempExplored = updatedExplored
+			else:
+				continue
+		for theta_dash in FOL_BC_AND(clause.antecedent, temp_theta, tempExplored):
+			yield theta_dash
+
+# def addToExplored(index, term, explored):
+# 	new_explored = deepcopy(explored)
+# 	for argument in term.arguments:
+# 		if not isinstance(argument, FactVariable):
+# 			return new_explored
+# 	try:
+# 		new_explored[index].append(term);
+# 	except:
+# 		new_explored[index] = [term]
+# 	return new_explored
+
+"""Function to check explored nodes"""
+def isExplored(index, term, explored):
+	visited = False
+	if index not in explored:
+		return False
+	else:
+		for each in explored[index]:
+			for i in range(len(each.arguments)):
+				if isinstance(term.arguments[i], FactVariable):
+					if term.arguments[i].value == each.arguments[i].value:
+						visited = True
+				if isinstance(term.arguments[i], UnknownVariable):
+					return False
+		return visited
+
+"""FOL_BC_ASK according to textbook"""
 def FOL_BC_ASK(query):
-	return FOL_BC_OR(query, {})
+	return FOL_BC_OR(query, dict())
 
-"""Main backward chain caller"""
+"""Main caller"""
 def backwardChain():
 	global queries
 
-	outputFile = "output.txt"
-	for eachQuery in queries:
+	outputFile = open("output.txt", "w")
+
+	for query in queries:
 		try:
-			answer_map_gen = FOL_BC_ASK(eachQuery)
-
-			if sum(1 for _ in answers_map_gen) > 0:
-				with open(outputFile, "a") as opFile:
-					opFile.write("TRUE\n")
-			else:
-				with open(outputFile, "a") as opFile:
-					opFile.write("FALSE\n")
+			FOL_BC_ASK(query).next()
+			print "TRUE\n"
+			outputFile.write("TRUE\n")
 		except:
-			with open(outputFile, "a") as opFile:
-				opFile.write("FALSE\n")
-  
+			print 'FALSE\n'
+			outputFile.write("FALSE\n")
 
-"""Process the input. Get queries and knowledge base by the end of this."""
+	outputFile.close()
+
+"""Function to process input"""
 def processInput():
-	global queries, knowledge_base
+	global queries
 	with open(sys.argv[-1], 'r') as inputFile:
-		numQueries = int(inputFile.readline())
-
-		for i in range(numQueries):
+		num_queries = int(inputFile.readline())
+		for x in range(num_queries):
 			query = inputFile.readline().rstrip()
+			constantMap = getFactVariableMap(query)
 			query_predicate = getPredicate(query)
 			const_list = list()
-			for eachConstant in getConstants(query):
-				const_list.append(Constant(eachConstant))
-			queries.append(Complex(query_predicate, const_list))
-
-		# for query in queries:
-		# 	print query, [i for i in query.arguments]
+			for eachFactVariable in getFactVariables(query):
+				const_list.append(FactVariable(eachFactVariable))
+			queries.append(Term(query_predicate, const_list))
 
 		numClauses = int(inputFile.readline())
 
@@ -233,17 +308,8 @@ def processInput():
 			clause = inputFile.readline().rstrip()
 			processKBClause(clause)
 
-		# for each in knowledge_base:
-		# 	if each.antecedent == True:
-		# 		pass
-		# 	else:
-		# 		for x in each.antecedent:
-		# 			print x.predicate, [arg.value for arg in x.arguments]
-			
-		# 	print each.consequent.predicate, [arg.value for arg in each.consequent.arguments]
-
-		backwardChain()
-
+	backwardChain()
+	
 
 def main():
 	processInput()
